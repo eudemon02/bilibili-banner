@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站空间头图：海洋生物 - 乌龟
 // @namespace    https://github.com/eudemon02/bilibili-banner#space-turtle-2068450020
-// @version      1.0.0
+// @version      1.0.1
 // @description  只在 UID 2068450020 的个人空间，用本地分层图替换头图背景。不影响首页、其他用户空间、视频和搜索。
 // @author       Shawn Phang (渲染逻辑，MIT)；个人空间适配
 // @license      MIT
@@ -41,7 +41,9 @@
  */
 (function () {
   'use strict';
-  if (window.top !== window.self) return;
+  try {
+    if (window.top !== window.self) return;
+  } catch (e) {}
 
   const THEME = '海洋生物 - 乌龟';
   const UID = '2068450020';
@@ -76,8 +78,116 @@
     return (1 - amt) * start + amt * end;
   }
 
+  const CANDIDATES = ['#app .h-inner', '.h-inner'];
+
   function bannerEl() {
-    return document.querySelector('#app .h-inner') || document.querySelector('.h-inner');
+    for (let i = 0; i < CANDIDATES.length; i++) {
+      const found = document.querySelector(CANDIDATES[i]);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function classNameOf(el) {
+    if (!el) return '';
+    const raw = el.className;
+    const text = typeof raw === 'string' ? raw : (raw && raw.baseVal) || '';
+    return String(text).replace(/\s+/g, ' ').trim().slice(0, 80);
+  }
+
+  function candidateReport() {
+    return CANDIDATES.map(function (sel) {
+      return sel + '=' + document.querySelectorAll(sel).length;
+    }).join(', ');
+  }
+
+  function geometryHints() {
+    const hints = [];
+    if (!document.body) return hints;
+    const nodes = document.body.querySelectorAll('div, section, header');
+    const minWidth = Math.max(320, window.innerWidth * 0.7);
+    for (let i = 0; i < nodes.length && hints.length < 4; i++) {
+      const rect = nodes[i].getBoundingClientRect();
+      if (rect.top < -20 || rect.top > 420) continue;
+      if (rect.width < minWidth || rect.height < 120 || rect.height > 260) continue;
+      const name = classNameOf(nodes[i]);
+      if (!name || hints.indexOf(name) !== -1) continue;
+      hints.push(name);
+    }
+    return hints;
+  }
+
+  function dressChain() {
+    if (!document.body) return [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const text = node.nodeValue.replace(/\s+/g, ' ').trim();
+      if (text.indexOf('装扮') !== 0 || text.length > 40) continue;
+      const chain = [];
+      let el = node.parentElement;
+      for (let i = 0; i < 4 && el && el !== document.body; i++) {
+        chain.push(classNameOf(el) || el.tagName.toLowerCase());
+        el = el.parentElement;
+      }
+      return chain;
+    }
+    return [];
+  }
+
+  function diagnostic() {
+    return {
+      v: '1.0.1',
+      path: location.pathname,
+      candidates: candidateReport(),
+      error: state.lastError || '',
+      bands: geometryHints(),
+      dress: dressChain()
+    };
+  }
+
+  function hideStatus() {
+    const node = document.getElementById('turtle-hook-status');
+    if (node) node.remove();
+  }
+
+  function showStatus() {
+    if (!document.documentElement) return;
+    ensureStyle();
+    const info = diagnostic();
+    let node = document.getElementById('turtle-hook-status');
+    if (!node) {
+      node = document.createElement('div');
+      node.id = 'turtle-hook-status';
+      const text = document.createElement('span');
+      text.className = 'turtle-hook-status-text';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = '复制诊断';
+      button.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const payload = JSON.stringify(diagnostic());
+        const area = document.createElement('textarea');
+        area.value = payload;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.left = '-9999px';
+        document.body.appendChild(area);
+        area.select();
+        try { document.execCommand('copy'); button.textContent = '已复制'; }
+        catch (e) { button.textContent = '请手动复制'; }
+        area.remove();
+        console.info('[turtle-hook]', payload);
+      });
+      node.appendChild(text);
+      node.appendChild(button);
+      document.documentElement.appendChild(node);
+    }
+    const reason = info.error ? ('运行错误：' + info.error) : '未找到 .h-inner';
+    node.firstChild.textContent = '乌龟头图未挂载：' + reason;
+    node.dataset.sample = JSON.stringify(info);
+    console.info('[turtle-hook]', node.dataset.sample);
   }
 
   function remember(el, prop, key) {
@@ -372,7 +482,9 @@
       '#turtle-hook-root .turtle-hook-layer{position:absolute;left:0;top:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;pointer-events:none;}',
       '#turtle-hook-root img{user-select:none;pointer-events:none;max-width:none;height:auto;background:transparent;}',
       '#turtle-hook-root .turtle-hook-credit{position:absolute;left:16px;bottom:8px;z-index:1;margin:0;max-width:70%;color:#fff;font-size:12px;line-height:1.4;text-shadow:0 1px 2px rgba(0,0,0,.7);pointer-events:none;}',
-      '#turtle-hook-toggle{position:absolute;right:16px;bottom:10px;z-index:4;pointer-events:auto;padding:4px 8px;border:1px solid rgba(255,255,255,.75);border-radius:6px;background:rgba(0,0,0,.45);color:#fff;font-size:12px;line-height:1.4;cursor:pointer;}'
+      '#turtle-hook-toggle{position:absolute;right:16px;bottom:10px;z-index:4;pointer-events:auto;padding:4px 8px;border:1px solid rgba(255,255,255,.75);border-radius:6px;background:rgba(0,0,0,.45);color:#fff;font-size:12px;line-height:1.4;cursor:pointer;}',
+      '#turtle-hook-status{position:fixed;left:8px;bottom:8px;z-index:2147483646;display:flex;gap:8px;align-items:center;max-width:min(360px,calc(100vw - 16px));padding:6px 8px;border-radius:8px;background:rgba(0,0,0,.72);color:#fff;font:12px/1.4 sans-serif;pointer-events:auto;}',
+      '#turtle-hook-status button{pointer-events:auto;border:0;border-radius:6px;background:#fff;color:#111;padding:2px 6px;cursor:pointer;}'
     ].join('');
     document.documentElement.appendChild(style);
   }
@@ -380,11 +492,19 @@
   function ensure() {
     if (!isTargetSpace()) {
       teardown(true);
+      hideStatus();
       return;
     }
-    if (state.disabled) return;
+    if (state.disabled) {
+      hideStatus();
+      return;
+    }
     const banner = bannerEl();
-    if (!banner) return;
+    if (!banner) {
+      showStatus();
+      return;
+    }
+    hideStatus();
     ensureStyle();
     suppressOriginal(banner);
     if (state.root && state.root.isConnected && state.root.dataset.theme === THEME && state.layers.length === LAYERS.length) {
@@ -416,7 +536,17 @@
     ensure();
   }
 
-  ensure();
-  state.poll = window.setInterval(tick, 1000);
-  window.addEventListener('popstate', tick);
+  function guard(fn) {
+    try {
+      fn();
+    } catch (e) {
+      state.lastError = String((e && e.message) || e).slice(0, 180);
+      showStatus();
+    }
+  }
+
+  state.lastError = '';
+  guard(ensure);
+  state.poll = window.setInterval(function () { guard(tick); }, 1000);
+  window.addEventListener('popstate', function () { guard(tick); });
 })();

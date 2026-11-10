@@ -23,7 +23,7 @@ function matches(url) {
   return patterns.some((pattern) => matchOne(pattern, url));
 }
 
-if (version !== '1.0.0') throw new Error(version);
+if (version !== '1.0.1') throw new Error(version);
 if (name !== 'B站空间头图：海洋生物 - 乌龟') throw new Error(name);
 if (namespace === home.match(/^\/\/ @namespace\s+(\S+)/m)[1]) throw new Error('namespace collides with homepage script');
 if (!source.includes("const THEME = '海洋生物 - 乌龟'")) throw new Error('theme');
