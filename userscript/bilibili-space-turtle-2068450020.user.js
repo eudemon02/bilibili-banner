@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站空间头图：海洋生物 - 乌龟
 // @namespace    https://github.com/eudemon02/bilibili-banner#space-turtle-2068450020
-// @version      1.0.1
+// @version      1.0.2
 // @description  只在 UID 2068450020 的个人空间，用本地分层图替换头图背景。不影响首页、其他用户空间、视频和搜索。
 // @author       Shawn Phang (渲染逻辑，MIT)；个人空间适配
 // @license      MIT
@@ -66,6 +66,8 @@
     poll: 0,
     onResize: null,
     onBlur: null,
+    mount: '',
+    hideHost: null,
   };
 
   function isTargetSpace() {
@@ -78,14 +80,29 @@
     return (1 - amt) * start + amt * end;
   }
 
-  const CANDIDATES = ['#app .h-inner', '.h-inner'];
+  const CANDIDATES = ['.header-toutu', '.toutu', '#app .h-inner', '.h-inner'];
+
+  function sizeOk(el) {
+    const rect = el.getBoundingClientRect();
+    return rect.width >= Math.max(320, window.innerWidth * 0.7)
+      && rect.height >= 120 && rect.height <= 280
+      && rect.top < 520 && rect.top > -40;
+  }
 
   function bannerEl() {
-    for (let i = 0; i < CANDIDATES.length; i++) {
-      const found = document.querySelector(CANDIDATES[i]);
-      if (found) return found;
+    const primary = ['.header-toutu', '.toutu'];
+    for (let i = 0; i < primary.length; i++) {
+      const list = document.querySelectorAll(primary[i]);
+      for (let j = 0; j < list.length; j++) {
+        if (sizeOk(list[j])) {
+          state.mount = primary[i];
+          return list[j];
+        }
+      }
     }
-    return null;
+    const legacy = document.querySelector('#app .h-inner') || document.querySelector('.h-inner');
+    state.mount = legacy ? 'h-inner' : '';
+    return legacy;
   }
 
   function classNameOf(el) {
@@ -137,9 +154,11 @@
 
   function diagnostic() {
     return {
-      v: '1.0.1',
+      v: '1.0.2',
       path: location.pathname,
       candidates: candidateReport(),
+      mount: state.mount || '',
+      layers: state.layers.length,
       error: state.lastError || '',
       bands: geometryHints(),
       dress: dressChain()
@@ -184,8 +203,12 @@
       node.appendChild(button);
       document.documentElement.appendChild(node);
     }
-    const reason = info.error ? ('运行错误：' + info.error) : '未找到 .h-inner';
-    node.firstChild.textContent = '乌龟头图未挂载：' + reason;
+    const reason = info.error ? ('运行错误：' + info.error) : '未找到头图容器';
+    node.firstChild.textContent = state.disabled
+      ? '已恢复原头图'
+      : (state.root && state.root.isConnected
+        ? ('乌龟头图已挂载 ' + state.layers.length + ' 层')
+        : ('乌龟头图未挂载：' + reason));
     node.dataset.sample = JSON.stringify(info);
     console.info('[turtle-hook]', node.dataset.sample);
   }
@@ -305,6 +328,19 @@
     return /\/bfs\/space\//.test(src) || /banner|topphoto|toutu/i.test(cls + ' ' + src);
   }
 
+  function interactive(el) {
+    return !!(el && (el.matches('a, button, input, textarea, select')
+      || el.querySelector('a, button, input, textarea, select, img.avatar, .avatar, [class*="avatar"]')));
+  }
+
+  function hideDecor(el) {
+    if (!el || el.dataset.turtleHidden === '1' || interactive(el)) return;
+    if (el.id === 'turtle-hook-root' || el.id === 'turtle-hook-toggle') return;
+    el.dataset.turtleHidden = '1';
+    remember(el, 'visibility', 'turtlePrevVis');
+    el.style.visibility = 'hidden';
+  }
+
   function suppressOriginal(banner) {
     if (banner.dataset.turtleBg == null) {
       banner.dataset.turtleBg = banner.style.backgroundImage || '';
@@ -314,16 +350,17 @@
       remember(banner, 'position', 'turtlePrevBannerPos');
       banner.style.position = 'relative';
     }
+    const scope = banner.closest('header.space-header') || banner;
+    state.hideHost = scope;
+    scope.querySelectorAll('.formal-toutu, .header-upinfo-bg-shadow').forEach(hideDecor);
     banner.querySelectorAll('img').forEach(function (img) {
       if (!decorativeBannerImage(img) || img.closest('#turtle-hook-root')) return;
-      if (img.dataset.turtleHidden === '1') return;
-      img.dataset.turtleHidden = '1';
-      remember(img, 'visibility', 'turtlePrevVis');
-      img.style.visibility = 'hidden';
+      hideDecor(img);
     });
     Array.prototype.forEach.call(banner.children, function (child) {
       if (child.id === 'turtle-hook-root' || child.id === 'turtle-hook-toggle') return;
-      lift(child);
+      if (child.dataset.turtleHidden === '1') return;
+      if (interactive(child)) lift(child);
     });
   }
 
@@ -337,12 +374,12 @@
       banner.style.position = banner.dataset.turtlePrevBannerPos;
       delete banner.dataset.turtlePrevBannerPos;
     }
-    banner.querySelectorAll('[data-turtle-hidden="1"]').forEach(function (img) {
+    document.querySelectorAll('[data-turtle-hidden="1"]').forEach(function (img) {
       img.style.visibility = img.dataset.turtlePrevVis || '';
       delete img.dataset.turtleHidden;
       delete img.dataset.turtlePrevVis;
     });
-    banner.querySelectorAll('[data-turtle-lift="1"]').forEach(function (el) {
+    document.querySelectorAll('[data-turtle-lift="1"]').forEach(function (el) {
       el.style.position = el.dataset.turtlePrevPos || '';
       el.style.zIndex = el.dataset.turtlePrevZ || '';
       delete el.dataset.turtleLift;
@@ -461,7 +498,8 @@
         const banner = bannerEl();
         removeOurNodes();
         restoreOriginal(banner);
-        if (banner) banner.appendChild(buildToggle());
+        if (document.documentElement) document.documentElement.appendChild(buildToggle());
+        showStatus();
       } else {
         state.disabled = false;
         if (state.toggle) state.toggle.remove();
@@ -481,8 +519,8 @@
       '#turtle-hook-root{position:absolute;inset:0;overflow:hidden;z-index:0;pointer-events:none;}',
       '#turtle-hook-root .turtle-hook-layer{position:absolute;left:0;top:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;pointer-events:none;}',
       '#turtle-hook-root img{user-select:none;pointer-events:none;max-width:none;height:auto;background:transparent;}',
-      '#turtle-hook-root .turtle-hook-credit{position:absolute;left:16px;bottom:8px;z-index:1;margin:0;max-width:70%;color:#fff;font-size:12px;line-height:1.4;text-shadow:0 1px 2px rgba(0,0,0,.7);pointer-events:none;}',
-      '#turtle-hook-toggle{position:absolute;right:16px;bottom:10px;z-index:4;pointer-events:auto;padding:4px 8px;border:1px solid rgba(255,255,255,.75);border-radius:6px;background:rgba(0,0,0,.45);color:#fff;font-size:12px;line-height:1.4;cursor:pointer;}',
+      '#turtle-hook-root .turtle-hook-credit{position:absolute;left:16px;top:8px;z-index:1;margin:0;max-width:46%;color:#fff;font-size:12px;line-height:1.4;text-shadow:0 1px 2px rgba(0,0,0,.7);pointer-events:none;}',
+      '#turtle-hook-toggle{position:fixed;left:8px;bottom:46px;z-index:2147483646;pointer-events:auto;padding:4px 8px;border:0;border-radius:6px;background:#fff;color:#111;font-size:12px;line-height:1.4;cursor:pointer;}',
       '#turtle-hook-status{position:fixed;left:8px;bottom:8px;z-index:2147483646;display:flex;gap:8px;align-items:center;max-width:min(360px,calc(100vw - 16px));padding:6px 8px;border-radius:8px;background:rgba(0,0,0,.72);color:#fff;font:12px/1.4 sans-serif;pointer-events:auto;}',
       '#turtle-hook-status button{pointer-events:auto;border:0;border-radius:6px;background:#fff;color:#111;padding:2px 6px;cursor:pointer;}'
     ].join('');
@@ -504,20 +542,21 @@
       showStatus();
       return;
     }
-    hideStatus();
     ensureStyle();
     suppressOriginal(banner);
     if (state.root && state.root.isConnected && state.root.dataset.theme === THEME && state.layers.length === LAYERS.length) {
-      if (!state.toggle || !state.toggle.isConnected) banner.appendChild(buildToggle());
+      if (!state.toggle || !state.toggle.isConnected) document.documentElement.appendChild(buildToggle());
       bindPointer(banner);
+      showStatus();
       return;
     }
     removeOurNodes();
     state.root = buildRoot(banner);
     banner.insertBefore(state.root, banner.firstChild);
-    banner.appendChild(buildToggle());
+    document.documentElement.appendChild(buildToggle());
     state.toggle.textContent = '恢复原头图';
     bindPointer(banner);
+    showStatus();
   }
 
   function tick() {
@@ -526,11 +565,11 @@
       return;
     }
     if (state.disabled) {
-      const banner = bannerEl();
-      if (banner && (!state.toggle || !state.toggle.isConnected)) {
+      if (!state.toggle || !state.toggle.isConnected) {
         ensureStyle();
-        banner.appendChild(buildToggle());
+        document.documentElement.appendChild(buildToggle());
       }
+      showStatus();
       return;
     }
     ensure();
