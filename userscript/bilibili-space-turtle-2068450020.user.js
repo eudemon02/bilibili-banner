@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站空间头图：海洋生物 - 乌龟
 // @namespace    https://github.com/eudemon02/bilibili-banner#space-turtle-2068450020
-// @version      1.0.2
+// @version      1.0.3
 // @description  只在 UID 2068450020 的个人空间，用本地分层图替换头图背景。不影响首页、其他用户空间、视频和搜索。
 // @author       Shawn Phang (渲染逻辑，MIT)；个人空间适配
 // @license      MIT
@@ -154,11 +154,13 @@
 
   function diagnostic() {
     return {
-      v: '1.0.2',
+      v: '1.0.3',
       path: location.pathname,
       candidates: candidateReport(),
       mount: state.mount || '',
       layers: state.layers.length,
+      hits: state.hits || 0,
+      moveX: Math.round(state.moveX || 0),
       error: state.lastError || '',
       bands: geometryHints(),
       dress: dressChain()
@@ -207,7 +209,7 @@
     node.firstChild.textContent = state.disabled
       ? '已恢复原头图'
       : (state.root && state.root.isConnected
-        ? ('乌龟头图已挂载 ' + state.layers.length + ' 层')
+        ? ('乌龟头图已挂载 ' + state.layers.length + ' 层 · 视差事件 ' + (state.hits || 0) + ' · moveX ' + Math.round(state.moveX || 0))
         : ('乌龟头图未挂载：' + reason));
     node.dataset.sample = JSON.stringify(info);
     console.info('[turtle-hook]', node.dataset.sample);
@@ -260,6 +262,47 @@
     }
   }
 
+  function bannerBox() {
+    if (!state.banner || !state.banner.isConnected) return null;
+    const rect = state.banner.getBoundingClientRect();
+    if (rect.width < 40 || rect.height < 40) return null;
+    return rect;
+  }
+
+  function pointerInBanner(event) {
+    const rect = bannerBox();
+    if (!rect) return false;
+    return event.clientX >= rect.left && event.clientX <= rect.right
+      && event.clientY >= rect.top && event.clientY <= rect.bottom;
+  }
+
+  function notePointer() {
+    if (state.statusTimer) return;
+    state.statusTimer = window.setTimeout(function () {
+      state.statusTimer = 0;
+      if (state.root && state.root.isConnected) showStatus();
+    }, 240);
+  }
+
+  function onPointer(event) {
+    if (!state.banner || state.disabled) return;
+    if (!pointerInBanner(event)) {
+      if (state.inside) {
+        state.inside = false;
+        onLeave();
+        notePointer();
+      }
+      return;
+    }
+    state.hits = (state.hits || 0) + 1;
+    if (!state.inside) {
+      state.inside = true;
+      onEnter(event);
+    }
+    onMove(event);
+    notePointer();
+  }
+
   function onEnter(event) {
     state.initX = event.clientX;
     if (state.homing) cancelAnimationFrame(state.homing);
@@ -272,6 +315,10 @@
     state.raf = requestAnimationFrame(function () {
       state.raf = 0;
       paint();
+      const node = document.getElementById('turtle-hook-status');
+      if (node && node.firstChild && state.root && state.root.isConnected && !state.disabled) {
+        node.firstChild.textContent = '乌龟头图已挂载 ' + state.layers.length + ' 层 · 视差事件 ' + (state.hits || 0) + ' · moveX ' + Math.round(state.moveX || 0);
+      }
     });
   }
 
@@ -404,16 +451,15 @@
   }
 
   function detachListeners() {
-    if (state.banner) {
-      state.banner.removeEventListener('mouseenter', onEnter);
-      state.banner.removeEventListener('mousemove', onMove);
-      state.banner.removeEventListener('mouseleave', onLeave);
-    }
+    document.removeEventListener('pointermove', onPointer, true);
+    document.removeEventListener('mousemove', onPointer, true);
     if (state.onResize) window.removeEventListener('resize', state.onResize);
     if (state.onBlur) window.removeEventListener('blur', state.onBlur);
     state.onResize = null;
     state.onBlur = null;
     state.banner = null;
+    state.inside = false;
+    state.pointerBound = false;
   }
 
   function removeOurNodes() {
@@ -434,12 +480,12 @@
   }
 
   function bindPointer(banner) {
-    if (state.banner === banner) return;
-    if (state.banner) detachListeners();
+    if (state.banner === banner && state.pointerBound) return;
+    if (state.banner || state.pointerBound) detachListeners();
     state.banner = banner;
-    banner.addEventListener('mouseenter', onEnter);
-    banner.addEventListener('mousemove', onMove);
-    banner.addEventListener('mouseleave', onLeave);
+    state.pointerBound = true;
+    document.addEventListener('pointermove', onPointer, true);
+    document.addEventListener('mousemove', onPointer, true);
     state.onBlur = onLeave;
     window.addEventListener('blur', state.onBlur);
     state.onResize = function () {
