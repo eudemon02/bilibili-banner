@@ -57,7 +57,7 @@ const oldPatterns = [
 const userUrl = 'https://www.bilibili.com/zh-Hans?spm_id_from=333.1007.0.0';
 const oldHit = oldPatterns.some((pattern) => matchOne(pattern, userUrl));
 if (oldHit) throw new Error('v1.0.0 patterns unexpectedly match the query homepage');
-if (version !== '1.0.1') throw new Error('version ' + version);
+if (version !== '1.1.0') throw new Error('version ' + version);
 for (const url of home) {
   if (!matches(url)) throw new Error('should match ' + url);
 }
