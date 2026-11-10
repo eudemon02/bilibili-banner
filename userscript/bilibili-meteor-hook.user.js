@@ -1,14 +1,26 @@
 // ==UserScript==
 // @name         B站首页横幅：流星坠雨落沙滩 - 月如钩
 // @namespace    https://github.com/eudemon02/bilibili-banner
-// @version      1.0.0
+// @version      1.0.1
 // @description  仅在 https://www.bilibili.com/ 桌面首页，用已审查的分层动态横幅替换头图。不读取 Cookie、账号或推荐数据。
 // @author       Shawn Phang (渲染逻辑，MIT)；个人首页适配
 // @license      MIT
 // @match        https://www.bilibili.com/
+// @match        https://www.bilibili.com/?*
 // @match        https://www.bilibili.com/index.html
+// @match        https://www.bilibili.com/index.html?*
 // @match        https://www.bilibili.com/zh-Hans
+// @match        https://www.bilibili.com/zh-Hans?*
 // @match        https://www.bilibili.com/zh-Hans/
+// @match        https://www.bilibili.com/zh-Hans/?*
+// @match        https://www.bilibili.com/zh-Hant
+// @match        https://www.bilibili.com/zh-Hant?*
+// @match        https://www.bilibili.com/zh-Hant/
+// @match        https://www.bilibili.com/zh-Hant/?*
+// @match        https://www.bilibili.com/en
+// @match        https://www.bilibili.com/en?*
+// @match        https://www.bilibili.com/en/
+// @match        https://www.bilibili.com/en/?*
 // @run-at       document-idle
 // @grant        none
 // @noframes
@@ -85,8 +97,10 @@
 
   function isHome() {
     if (location.protocol !== 'https:' || location.hostname !== 'www.bilibili.com') return false;
+    // pathname 不含查询串。/?spm_id_from=... 与 /zh-Hans?spm_id_from=... 仍是首页。
     const path = location.pathname;
-    return path === '/' || path === '/index.html' || path === '/zh-Hans' || path === '/zh-Hans/';
+    return path === '/' || path === '/index.html' || path === '/zh-Hans' || path === '/zh-Hans/'
+      || path === '/zh-Hant' || path === '/zh-Hant/' || path === '/en' || path === '/en/';
   }
 
   function lerp(start, end, amt) {
